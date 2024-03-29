@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	"github.com/codecrafters-io/redis-starter-go/app/resp"
 	"io"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 	// Uncomment this block to pass the first stage
 	// "net"
@@ -16,6 +16,7 @@ const PORT = "6379"
 const PING = "PING"
 const PONG = "PONG"
 const DOCS = "COMMAND DOCS"
+const ECHO = "ECHO"
 
 func main() {
 	l, err := net.Listen("tcp", "0.0.0.0:"+PORT)
@@ -56,47 +57,24 @@ func handleConnection(conn net.Conn) {
 
 		data := string(buf[:n])
 
-		//fmt.Println("Incoming data:\n\n" + data)
-
-		command := strings.Join(fromResp3(data), " ")
+		commandParts := resp.ParseCommand(data)
+		command := strings.Join(commandParts, " ")
 
 		fmt.Printf("parsed command: `%s`\n", command)
 
 		if isCommand(command, PING) {
-			conn.Write([]byte(lineToResp3(PONG)))
+			conn.Write([]byte(resp.SimpleString(PONG)))
 		} else if isCommand(command, DOCS) {
-			conn.Write([]byte(lineToResp3("OK")))
+			conn.Write([]byte(resp.SimpleString("OK")))
+		} else if isCommand(command, ECHO) {
+			value := strings.Join(commandParts[1:], " ")
+			conn.Write([]byte(resp.BulkString(value)))
 		} else {
-			conn.Write([]byte(errorToResp3("unknown command")))
+			conn.Write([]byte(resp.SimpleError("unknown command")))
 		}
 	}
 }
 
 func isCommand(input string, value string) bool {
-	return strings.ToUpper(input) == value
-}
-
-func lineToResp3(str string) string {
-	return fmt.Sprintf("+%s\r\n", str)
-}
-
-func errorToResp3(str string) string {
-	return fmt.Sprintf("-ERR %s\r\n", str)
-}
-
-func fromResp3(input string) []string {
-	lines := strings.Split(strings.Trim(input, "\r\n"), "\r\n")
-	argsNoStr := strings.Split(lines[0], "*")[1]
-	argsNo, _ := strconv.ParseInt(argsNoStr, 10, 32)
-
-	var args []string
-
-	for i := 1; i <= 2*int(argsNo); i += 2 {
-		argLenStr := strings.Split(lines[i], "$")[1]
-		argLen, _ := strconv.ParseInt(argLenStr, 10, 32)
-		arg := lines[i+1][:argLen]
-		args = append(args, arg)
-	}
-
-	return args
+	return strings.HasPrefix(strings.ToUpper(input), value)
 }
