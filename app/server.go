@@ -26,33 +26,32 @@ func main() {
 
 	fmt.Println("Server is listening on port " + PORT)
 
+	conn, err := l.Accept()
+	if err != nil {
+		fmt.Println("Error accepting connection: ", err.Error())
+
+	}
+	defer conn.Close()
 	for {
-		conn, err := l.Accept()
+		buf := make([]byte, 1024)
+
+		n, err := conn.Read(buf)
+
 		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
-			continue
+			fmt.Println("Error reading data", err.Error())
 		}
 
-		go handleConnection(conn)
+		data := string(buf[:n])
+		go handleConnection(conn, data)
 	}
 }
 
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
-
-	buf := make([]byte, 1024)
-
-	n, err := conn.Read(buf)
-
-	if err != nil {
-		fmt.Println("Error reading data", err.Error())
-	}
-
-	data := string(buf[:n])
-
+func handleConnection(conn net.Conn, data string) {
 	fmt.Println("Incoming data:\n\n" + data)
 
-	command := fromResp3("*1\r\n$4\r\nping\r\n")
+	command := fromResp3(data)
+
+	//fmt.Printf("parsed command -> %s <-\n", command)
 
 	if strings.ToUpper(command[0]) == PING {
 		conn.Write([]byte(toResp3(PONG)))
