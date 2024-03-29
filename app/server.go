@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 const PORT = "6379"
 const PING = "PING"
 const PONG = "PONG"
+const DOCS = "COMMAND DOCS"
 
 func main() {
 	l, err := net.Listen("tcp", "0.0.0.0:"+PORT)
@@ -26,12 +28,19 @@ func main() {
 
 	fmt.Println("Server is listening on port " + PORT)
 
-	conn, err := l.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			continue
+		}
+		go handleConnection(conn)
 	}
+}
+
+func handleConnection(conn net.Conn) {
 	defer conn.Close()
+
 	for {
 		buf := make([]byte, 1024)
 
@@ -39,30 +48,40 @@ func main() {
 
 		if err != nil {
 			fmt.Println("Error reading data", err.Error())
+			if err == io.EOF {
+				return
+			}
+			continue
 		}
 
 		data := string(buf[:n])
-		go handleConnection(conn, data)
+
+		//fmt.Println("Incoming data:\n\n" + data)
+
+		command := strings.Join(fromResp3(data), " ")
+
+		fmt.Printf("parsed command: `%s`\n", command)
+
+		if isCommand(command, PING) {
+			conn.Write([]byte(lineToResp3(PONG)))
+		} else if isCommand(command, DOCS) {
+			conn.Write([]byte(lineToResp3("OK")))
+		} else {
+			conn.Write([]byte(errorToResp3("unknown command")))
+		}
 	}
 }
 
-func handleConnection(conn net.Conn, data string) {
-	fmt.Println("Incoming data:\n\n" + data)
-
-	command := fromResp3(data)
-
-	//fmt.Printf("parsed command -> %s <-\n", command)
-
-	if strings.ToUpper(command[0]) == PING {
-		conn.Write([]byte(toResp3(PONG)))
-		return
-	}
-
-	conn.Write([]byte(toResp3("OK")))
+func isCommand(input string, value string) bool {
+	return strings.ToUpper(input) == value
 }
 
-func toResp3(str string) string {
+func lineToResp3(str string) string {
 	return fmt.Sprintf("+%s\r\n", str)
+}
+
+func errorToResp3(str string) string {
+	return fmt.Sprintf("-ERR %s\r\n", str)
 }
 
 func fromResp3(input string) []string {
