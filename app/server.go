@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -89,7 +90,8 @@ func handleConnection(conn net.Conn, db storage.Db) {
 			value := db.Get(commandParts[1])
 			respond(conn, resp.BulkString(value))
 		} else if isCommand(command, SET) {
-			db.Set(commandParts[1], commandParts[2])
+			px := parsePX(command)
+			db.Set(commandParts[1], commandParts[2], px)
 			respond(conn, resp.SimpleString("OK"))
 		} else {
 			respond(conn, resp.SimpleError("unknown command"))
@@ -106,4 +108,21 @@ func respond(conn net.Conn, msg string) {
 	if err != nil {
 		fmt.Println("Error writing data")
 	}
+}
+
+func parsePX(command string) int64 {
+	var pxRaw string
+
+	pxArgs := strings.Split(strings.ToUpper(command), "PX")
+	if len(pxArgs) == 1 {
+		pxRaw = "-1"
+	} else {
+		pxRaw = strings.TrimSpace(pxArgs[1])
+	}
+	px, err := strconv.ParseInt(pxRaw, 10, 32)
+	if err != nil {
+		fmt.Println("Could not parse PX from command: ", command)
+		px = -1
+	}
+	return px
 }
