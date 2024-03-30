@@ -3,29 +3,45 @@ package main
 import (
 	"fmt"
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
+	"github.com/codecrafters-io/redis-starter-go/app/storage"
 	"io"
 	"net"
 	"os"
 	"strings"
-	// Uncomment this block to pass the first stage
-	// "net"
-	// "os"
 )
 
-const PORT = "6379"
-const PING = "PING"
-const PONG = "PONG"
-const DOCS = "COMMAND DOCS"
-const ECHO = "ECHO"
+const (
+	PORT = "6379"
+	PING = "PING"
+	PONG = "PONG"
+	DOCS = "COMMAND DOCS"
+	ECHO = "ECHO"
+	GET  = "GET"
+	SET  = "SET"
+)
+
+func closeConnections(closable any) {
+	switch s := closable.(type) {
+	case net.Listener:
+	case net.Conn:
+		err := s.Close()
+		if err != nil {
+			fmt.Println("Error closing client")
+		}
+	default:
+		fmt.Println("Nothing to close")
+	}
+}
 
 func main() {
+	db := storage.NewDb()
 	l, err := net.Listen("tcp", "0.0.0.0:"+PORT)
 
 	if err != nil {
 		fmt.Println("Failed to bind to port " + PORT)
 		os.Exit(1)
 	}
-	defer l.Close()
+	defer closeConnections(l)
 
 	fmt.Println("Server is listening on port " + PORT)
 
@@ -35,12 +51,12 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			continue
 		}
-		go handleConnection(conn)
+		go handleConnection(conn, db)
 	}
 }
 
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
+func handleConnection(conn net.Conn, db storage.Db) {
+	defer closeConnections(conn)
 
 	for {
 		buf := make([]byte, 1024)
@@ -63,18 +79,31 @@ func handleConnection(conn net.Conn) {
 		fmt.Printf("parsed command: `%s`\n", command)
 
 		if isCommand(command, PING) {
-			conn.Write([]byte(resp.SimpleString(PONG)))
+			respond(conn, resp.SimpleString(PONG))
 		} else if isCommand(command, DOCS) {
-			conn.Write([]byte(resp.SimpleString("OK")))
+			respond(conn, resp.SimpleString("OK"))
 		} else if isCommand(command, ECHO) {
 			value := strings.Join(commandParts[1:], " ")
-			conn.Write([]byte(resp.BulkString(value)))
+			respond(conn, resp.BulkString(value))
+		} else if isCommand(command, GET) {
+			value := db.Get(commandParts[1])
+			respond(conn, resp.BulkString(value))
+		} else if isCommand(command, SET) {
+			db.Set(commandParts[1], commandParts[2])
+			respond(conn, resp.SimpleString("OK"))
 		} else {
-			conn.Write([]byte(resp.SimpleError("unknown command")))
+			respond(conn, resp.SimpleError("unknown command"))
 		}
 	}
 }
 
 func isCommand(input string, value string) bool {
 	return strings.HasPrefix(strings.ToUpper(input), value)
+}
+
+func respond(conn net.Conn, msg string) {
+	_, err := conn.Write([]byte(msg))
+	if err != nil {
+		fmt.Println("Error writing data")
+	}
 }

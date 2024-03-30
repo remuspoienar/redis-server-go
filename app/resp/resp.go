@@ -6,12 +6,16 @@ import (
 	"strings"
 )
 
-func BulkString(input string) string {
-	return fmt.Sprintf("$%d\r\n%s\r\n", len(input), input)
+func BulkString(input any) string {
+	if input == nil {
+		return "$-1\r\n"
+	}
+	str := fmt.Sprintf("%s", input)
+	return fmt.Sprintf("$%d\r\n%s\r\n", len(str), str)
 }
 
-func SimpleString(str string) string {
-	return fmt.Sprintf("+%s\r\n", str)
+func SimpleString(input any) string {
+	return fmt.Sprintf("+%s\r\n", input)
 }
 
 func SimpleError(str string) string {
