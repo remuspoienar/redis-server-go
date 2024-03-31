@@ -1,8 +1,8 @@
 package main
 
 import (
-	"flag"
 	"fmt"
+	"github.com/codecrafters-io/redis-starter-go/app/instance"
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
 	"github.com/codecrafters-io/redis-starter-go/app/storage"
 	"io"
@@ -13,14 +13,13 @@ import (
 )
 
 const (
-	DefaultPort = 6379
-	PING        = "PING"
-	PONG        = "PONG"
-	DOCS        = "COMMAND DOCS"
-	ECHO        = "ECHO"
-	GET         = "GET"
-	SET         = "SET"
-	INFO        = "INFO"
+	PING = "PING"
+	PONG = "PONG"
+	DOCS = "COMMAND DOCS"
+	ECHO = "ECHO"
+	GET  = "GET"
+	SET  = "SET"
+	INFO = "INFO"
 )
 
 func closeConnections(closable any) {
@@ -36,46 +35,32 @@ func closeConnections(closable any) {
 	}
 }
 
-var role = "master"
+var props instance.Properties
+var db storage.Db
 
 func main() {
-	var port int
-	var masterHost string
-	var masterAddress string
-	flag.IntVar(&port, "port", DefaultPort, "Port to run server(positive integer)")
-	flag.StringVar(&masterHost, "replicaof", "", "Provide master address to start in replica mode)")
-	flag.Parse()
+	props = instance.InitProperties()
+	db = storage.NewDb()
 
-	db := storage.NewDb()
-	address := fmt.Sprintf("0.0.0.0:%d", port)
+	address := fmt.Sprintf("0.0.0.0:%d", props.Port())
 	l, err := net.Listen("tcp", address)
 
 	if err != nil {
-		fmt.Println("Failed to bind port on " + address)
+		fmt.Println("Failed to bind port on", address)
 		os.Exit(1)
 	}
 	defer closeConnections(l)
 
-	if masterHost != "" {
-		var masterPort string
-
-		if len(flag.Args()) > 0 {
-			masterPort = flag.Args()[0]
-		} else {
-			fmt.Println("Invalid master address")
-			os.Exit(1)
-		}
-		masterAddress = fmt.Sprintf("%s:%s", masterHost, masterPort)
-		role = "slave"
-		fmt.Printf("[%s]Server is listening on %s\nas a replica for master %s\n", role, address, masterAddress)
+	if props.IsMaster() {
+		fmt.Printf("[%s]Server is listening on %s\n", props.Role(), address)
 	} else {
-		fmt.Printf("[%s]Server is listening on %s\n", role, address)
+		fmt.Printf("[%s]Server is listening on %s\nas a replica for master %s\n", props.Role(), address, props.MasterAddress())
 	}
 
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
+			fmt.Println("Error accepting connection:", err.Error())
 			continue
 		}
 		go handleConnection(conn, db)
@@ -142,7 +127,7 @@ func infoCommand(parts []string) string {
 	}
 	switch subCommand {
 	default:
-		return fmt.Sprintf("role:%s", role)
+		return props.ReplicationInfo()
 	}
 }
 
@@ -164,7 +149,7 @@ func parsePX(command string) int64 {
 	}
 	px, err := strconv.ParseInt(pxRaw, 10, 32)
 	if err != nil {
-		fmt.Println("Could not parse PX from command: ", command)
+		fmt.Printf("Could not parse PX from command `%s`\n", command)
 		px = -1
 	}
 	return px
