@@ -20,6 +20,7 @@ const (
 	ECHO        = "ECHO"
 	GET         = "GET"
 	SET         = "SET"
+	INFO        = "INFO"
 )
 
 func closeConnections(closable any) {
@@ -84,21 +85,25 @@ func handleConnection(conn net.Conn, db storage.Db) {
 
 		fmt.Printf("parsed command: `%s`\n", command)
 
-		if isCommand(command, PING) {
+		switch {
+		case isCommand(command, PING):
 			respond(conn, resp.SimpleString(PONG))
-		} else if isCommand(command, DOCS) {
+		case isCommand(command, DOCS):
 			respond(conn, resp.SimpleString("OK"))
-		} else if isCommand(command, ECHO) {
+		case isCommand(command, ECHO):
 			value := strings.Join(commandParts[1:], " ")
 			respond(conn, resp.BulkString(value))
-		} else if isCommand(command, GET) {
+		case isCommand(command, GET):
 			value := db.Get(commandParts[1])
 			respond(conn, resp.BulkString(value))
-		} else if isCommand(command, SET) {
+		case isCommand(command, SET):
 			px := parsePX(command)
 			db.Set(commandParts[1], commandParts[2], px)
 			respond(conn, resp.SimpleString("OK"))
-		} else {
+		case isCommand(command, INFO):
+			value := infoCommand(commandParts)
+			respond(conn, resp.BulkString(value))
+		default:
 			respond(conn, resp.SimpleError("unknown command"))
 		}
 	}
@@ -106,6 +111,21 @@ func handleConnection(conn net.Conn, db storage.Db) {
 
 func isCommand(input string, value string) bool {
 	return strings.HasPrefix(strings.ToUpper(input), value)
+}
+
+func infoCommand(parts []string) string {
+	var subCommand string
+	if len(parts) < 2 {
+		subCommand = "replication"
+	} else {
+		subCommand = parts[1]
+	}
+	switch subCommand {
+	case "replication":
+		return "role:master"
+	default:
+		return "role:master"
+	}
 }
 
 func respond(conn net.Conn, msg string) {
