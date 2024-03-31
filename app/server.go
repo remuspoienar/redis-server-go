@@ -36,10 +36,16 @@ func closeConnections(closable any) {
 	}
 }
 
+var role = "master"
+
 func main() {
 	var port int
+	var masterHost string
+	var masterAddress string
 	flag.IntVar(&port, "port", DefaultPort, "Port to run server(positive integer)")
+	flag.StringVar(&masterHost, "replicaof", "", "Provide master address to start in replica mode)")
 	flag.Parse()
+
 	db := storage.NewDb()
 	address := fmt.Sprintf("0.0.0.0:%d", port)
 	l, err := net.Listen("tcp", address)
@@ -50,7 +56,21 @@ func main() {
 	}
 	defer closeConnections(l)
 
-	fmt.Println("Server is listening on " + address)
+	if masterHost != "" {
+		var masterPort string
+
+		if len(flag.Args()) > 0 {
+			masterPort = flag.Args()[0]
+		} else {
+			fmt.Println("Invalid master address")
+			os.Exit(1)
+		}
+		masterAddress = fmt.Sprintf("%s:%s", masterHost, masterPort)
+		role = "slave"
+		fmt.Printf("[%s]Server is listening on %s\nas a replica for master %s\n", role, address, masterAddress)
+	} else {
+		fmt.Printf("[%s]Server is listening on %s\n", role, address)
+	}
 
 	for {
 		conn, err := l.Accept()
@@ -121,10 +141,8 @@ func infoCommand(parts []string) string {
 		subCommand = parts[1]
 	}
 	switch subCommand {
-	case "replication":
-		return "role:master"
 	default:
-		return "role:master"
+		return fmt.Sprintf("role:%s", role)
 	}
 }
 
