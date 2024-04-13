@@ -25,11 +25,11 @@ func infoCommand(parts []string) string {
 	}
 }
 
-func handleConnection(conn net.Conn, db storage.Db) {
+func handleConnection(conn net.Conn) {
 	defer CloseConnections(conn)
 
 	for {
-		buf := make([]byte, 1024)
+		buf := make([]byte, 4096)
 
 		n, err := conn.Read(buf)
 
@@ -44,6 +44,9 @@ func handleConnection(conn net.Conn, db storage.Db) {
 		data := string(buf[:n])
 
 		commandParts := resp.ParseCommand(data)
+		if !props.IsMaster() {
+			fmt.Println("Parsed cmd from master;", commandParts)
+		}
 		command := strings.Join(commandParts, " ")
 
 		fmt.Printf("parsed command: `%s`\n", command)
@@ -62,27 +65,41 @@ func handleConnection(conn net.Conn, db storage.Db) {
 		case IsCommand(command, "SET"):
 			px := ParsePX(command)
 			db.Set(commandParts[1], commandParts[2], px)
-			WriteString(conn, resp.SimpleString("OK"))
+
+			if props.IsMaster() {
+				WriteString(conn, resp.SimpleString("OK"))
+				instance.PropagateCommand(buf[:n])
+			}
 		case IsCommand(command, "INFO"):
 			value := infoCommand(commandParts)
 			WriteString(conn, resp.BulkString(value))
 		case IsCommand(command, "REPLCONF"):
-			WriteString(conn, resp.SimpleString("OK"))
+			if props.IsMaster() {
+				WriteString(conn, resp.SimpleString("OK"))
+			} else {
+				resp.InvalidReplicaCommand(conn)
+			}
 		case IsCommand(command, "PSYNC"):
+			if !props.IsMaster() {
+				resp.InvalidReplicaCommand(conn)
+				continue
+			}
 			value := fmt.Sprintf("FULLRESYNC %s %d", props.ReplId(), props.ReplOffset())
 			WriteString(conn, resp.SimpleString(value))
 			WriteString(conn, resp.EmptyRdb())
+			instance.LinkReplica(conn)
 		default:
 			WriteString(conn, resp.SimpleError("unknown command"))
 		}
 	}
 }
 
+var instance instances.Instance
 var props instances.Properties
 var db storage.Db
 
 func main() {
-	instance := instances.New()
+	instance = instances.New()
 	props = instance.Props()
 	db = storage.NewDb()
 
@@ -98,16 +115,17 @@ func main() {
 	if props.IsMaster() {
 		fmt.Printf("[%s]Server is listening on %s\n", props.Role(), address)
 	} else {
-		instance.ConnectToMaster()
+		go instance.ConnectToMaster()
 		fmt.Printf("[%s]Server is listening on %s\nas a replica for master %s\n", props.Role(), address, props.MasterAddress())
 	}
 
 	for {
 		conn, err := l.Accept()
+
 		if err != nil {
 			fmt.Println("Error accepting connection:", err.Error())
 			continue
 		}
-		go handleConnection(conn, db)
+		go handleConnection(conn)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/codecrafters-io/redis-starter-go/app/internal"
+	"net"
 	"strconv"
 	"strings"
 )
@@ -24,7 +25,7 @@ func SimpleError(str string) string {
 	return fmt.Sprintf("-ERR %s\r\n", str)
 }
 
-func Array(input []string) string {
+func Array(input ...string) string {
 	res := fmt.Sprintf("*%d\r\n", len(input))
 	for _, str := range input {
 		res += BulkString(str)
@@ -53,5 +54,8 @@ func EmptyRdb() string {
 	bin, _ := hex.DecodeString(internal.EmptyRdbHex)
 	res := BulkString(bin)
 	return strings.TrimRight(res, "\r\n")
+}
 
+func InvalidReplicaCommand(conn net.Conn) {
+	internal.WriteString(conn, SimpleError("This command cannot be executed on a replica"))
 }

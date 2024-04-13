@@ -84,12 +84,17 @@ master_repl_offset:%d
 }
 
 type Instance struct {
-	props Properties
+	props    Properties
+	replicas []net.Conn
 }
 
 func New() Instance {
 	props := initProperties()
-	return Instance{props}
+	i := Instance{props: props, replicas: nil}
+	if props.IsMaster() {
+		i.replicas = []net.Conn{}
+	}
+	return i
 }
 
 func (i *Instance) Props() Properties {
@@ -98,11 +103,11 @@ func (i *Instance) Props() Properties {
 
 func (i *Instance) ConnectToMaster() {
 	conn, _ := net.Dial("tcp", i.props.masterAddress)
-	defer CloseConnections(conn)
+	fmt.Printf("[%s] Attempting handshake ... local %s, remote %s\n", i.props.role, conn.LocalAddr(), conn.RemoteAddr())
 
 	responseBuf := make([]byte, 1024)
 
-	WriteString(conn, resp.Array([]string{"ping"}))
+	WriteString(conn, resp.Array("ping"))
 	_, err := conn.Read(responseBuf)
 	if err != nil {
 		fmt.Println("Error connecting to master 1/3")
@@ -115,7 +120,7 @@ func (i *Instance) ConnectToMaster() {
 		{"REPLCONF", "capa", "psync2"},
 	}
 	for _, argSet := range replconfArgs {
-		WriteString(conn, resp.Array(argSet))
+		WriteString(conn, resp.Array(argSet...))
 		_, err = conn.Read(responseBuf)
 		if err != nil {
 			fmt.Println("Error connecting to master 2/3")
@@ -123,13 +128,31 @@ func (i *Instance) ConnectToMaster() {
 		}
 	}
 
-	WriteString(conn, resp.Array([]string{"PSYNC", "?", "-1"}))
+	WriteString(conn, resp.Array("PSYNC", "?", "-1"))
 	_, err = conn.Read(responseBuf)
 	if err != nil {
 		fmt.Println("Error connecting to master 3/3")
 		return
 	}
 
+	fmt.Printf("[%s] Handshake with master instance successful\n", i.props.Role())
+}
+
+func (i *Instance) LinkReplica(replicaConn net.Conn) {
+	fmt.Printf("Attaching replica to master, local %s, remote %s\n", replicaConn.LocalAddr(), replicaConn.RemoteAddr())
+	i.replicas = append(i.replicas, replicaConn)
+}
+
+func (i *Instance) PropagateCommand(b []byte) {
+	for _, conn := range i.replicas {
+
+		//fmt.Println("Sending write command to replica", b, conn.RemoteAddr())
+		_, err := conn.Write(b)
+		//fmt.Println("Wrote n bytes", n)
+		if err != nil {
+			fmt.Println("err when sending command", err)
+		}
+	}
 }
 
 func genReplId() string {
