@@ -12,17 +12,6 @@ import (
 	"strings"
 )
 
-const (
-	PING     = "PING"
-	PONG     = "PONG"
-	DOCS     = "COMMAND DOCS"
-	ECHO     = "ECHO"
-	GET      = "GET"
-	SET      = "SET"
-	INFO     = "INFO"
-	REPLCONF = "REPLCONF"
-)
-
 func infoCommand(parts []string) string {
 	var subCommand string
 	if len(parts) < 2 {
@@ -60,25 +49,28 @@ func handleConnection(conn net.Conn, db storage.Db) {
 		fmt.Printf("parsed command: `%s`\n", command)
 
 		switch {
-		case IsCommand(command, PING):
-			WriteString(conn, resp.SimpleString(PONG))
-		case IsCommand(command, DOCS):
+		case IsCommand(command, "PING"):
+			WriteString(conn, resp.SimpleString("PONG"))
+		case IsCommand(command, "DOCS"):
 			WriteString(conn, resp.SimpleString("OK"))
-		case IsCommand(command, ECHO):
+		case IsCommand(command, "ECHO"):
 			value := strings.Join(commandParts[1:], " ")
 			WriteString(conn, resp.BulkString(value))
-		case IsCommand(command, GET):
+		case IsCommand(command, "GET"):
 			value := db.Get(commandParts[1])
 			WriteString(conn, resp.BulkString(value))
-		case IsCommand(command, SET):
+		case IsCommand(command, "SET"):
 			px := ParsePX(command)
 			db.Set(commandParts[1], commandParts[2], px)
 			WriteString(conn, resp.SimpleString("OK"))
-		case IsCommand(command, INFO):
+		case IsCommand(command, "INFO"):
 			value := infoCommand(commandParts)
 			WriteString(conn, resp.BulkString(value))
-		case IsCommand(command, REPLCONF):
-			WriteString(conn, resp.BulkString("OK"))
+		case IsCommand(command, "REPLCONF"):
+			WriteString(conn, resp.SimpleString("OK"))
+		case IsCommand(command, "PSYNC"):
+			value := fmt.Sprintf("FULLRESYNC %s %d", props.ReplId(), props.ReplOffset())
+			WriteString(conn, resp.SimpleString(value))
 		default:
 			WriteString(conn, resp.SimpleError("unknown command"))
 		}

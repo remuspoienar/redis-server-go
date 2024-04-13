@@ -123,6 +123,13 @@ func (i *Instance) ConnectToMaster() {
 		}
 	}
 
+	WriteString(conn, resp.Array([]string{"PSYNC", "?", "-1"}))
+	_, err = conn.Read(responseBuf)
+	if err != nil {
+		fmt.Println("Error connecting to master 3/3")
+		return
+	}
+
 }
 
 func genReplId() string {
