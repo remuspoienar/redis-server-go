@@ -71,6 +71,7 @@ func handleConnection(conn net.Conn, db storage.Db) {
 		case IsCommand(command, "PSYNC"):
 			value := fmt.Sprintf("FULLRESYNC %s %d", props.ReplId(), props.ReplOffset())
 			WriteString(conn, resp.SimpleString(value))
+			WriteString(conn, resp.EmptyRdb())
 		default:
 			WriteString(conn, resp.SimpleError("unknown command"))
 		}

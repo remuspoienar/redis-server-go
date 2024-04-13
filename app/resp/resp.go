@@ -1,7 +1,9 @@
 package resp
 
 import (
+	"encoding/hex"
 	"fmt"
+	"github.com/codecrafters-io/redis-starter-go/app/internal"
 	"strconv"
 	"strings"
 )
@@ -45,4 +47,11 @@ func ParseCommand(input string) []string {
 	}
 
 	return args
+}
+
+func EmptyRdb() string {
+	bin, _ := hex.DecodeString(internal.EmptyRdbHex)
+	res := BulkString(bin)
+	return strings.TrimRight(res, "\r\n")
+
 }
