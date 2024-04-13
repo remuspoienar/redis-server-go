@@ -34,19 +34,16 @@ func handleConnection(conn net.Conn) {
 		n, err := conn.Read(buf)
 
 		if err != nil {
-			fmt.Println("Error reading data", err.Error())
 			if err == io.EOF {
 				return
 			}
+			fmt.Println("Error reading data", err.Error())
 			continue
 		}
 
 		data := string(buf[:n])
 
 		commandParts := resp.ParseCommand(data)
-		if !props.IsMaster() {
-			fmt.Println("Parsed cmd from master;", commandParts)
-		}
 		command := strings.Join(commandParts, " ")
 
 		fmt.Printf("parsed command: `%s`\n", command)
