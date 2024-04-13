@@ -1,9 +1,12 @@
-package instance
+package instances
 
 import (
 	"flag"
 	"fmt"
+	. "github.com/codecrafters-io/redis-starter-go/app/internal"
+	"github.com/codecrafters-io/redis-starter-go/app/resp"
 	"math/rand"
+	"net"
 	"os"
 	"time"
 )
@@ -23,7 +26,7 @@ type Properties struct {
 	masterAddress string
 }
 
-func InitProperties() Properties {
+func initProperties() Properties {
 	props := Properties{role: MASTER, replId: genReplId(), replOffset: 0}
 
 	var masterHost string
@@ -77,6 +80,30 @@ role:%s
 master_replid:%s
 master_repl_offset:%d
 `, props.Role(), props.ReplId(), props.ReplOffset())
+}
+
+type Instance struct {
+	props Properties
+}
+
+func New() Instance {
+	props := initProperties()
+	return Instance{props}
+}
+
+func (i *Instance) Props() Properties {
+	return i.props
+}
+
+func (i *Instance) ConnectToMaster() {
+	conn, _ := net.Dial("tcp", i.props.masterAddress)
+	defer CloseConnections(conn)
+	WriteString(conn, resp.Array([]string{"ping"}))
+
+	responseBuf := make([]byte, 1024)
+	n, _ := conn.Read(responseBuf)
+	response := responseBuf[:n]
+	fmt.Println("MASTER RESPONSE:", string(response))
 }
 
 func genReplId() string {

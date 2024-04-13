@@ -22,6 +22,14 @@ func SimpleError(str string) string {
 	return fmt.Sprintf("-ERR %s\r\n", str)
 }
 
+func Array(input []string) string {
+	res := fmt.Sprintf("*%d\r\n", len(input))
+	for _, str := range input {
+		res += BulkString(str)
+	}
+	return res
+}
+
 func ParseCommand(input string) []string {
 	lines := strings.Split(strings.Trim(input, "\r\n"), "\r\n")
 	argsNoStr := strings.Split(lines[0], "*")[1]
