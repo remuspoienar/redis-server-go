@@ -145,10 +145,7 @@ func (i *Instance) LinkReplica(replicaConn net.Conn) {
 
 func (i *Instance) PropagateCommand(b []byte) {
 	for _, conn := range i.replicas {
-
-		//fmt.Println("Sending write command to replica", b, conn.RemoteAddr())
 		_, err := conn.Write(b)
-		//fmt.Println("Wrote n bytes", n)
 		if err != nil {
 			fmt.Println("err when sending command", err)
 		}
