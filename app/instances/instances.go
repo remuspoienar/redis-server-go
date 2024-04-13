@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -98,12 +99,30 @@ func (i *Instance) Props() Properties {
 func (i *Instance) ConnectToMaster() {
 	conn, _ := net.Dial("tcp", i.props.masterAddress)
 	defer CloseConnections(conn)
-	WriteString(conn, resp.Array([]string{"ping"}))
 
 	responseBuf := make([]byte, 1024)
-	n, _ := conn.Read(responseBuf)
-	response := responseBuf[:n]
-	fmt.Println("MASTER RESPONSE:", string(response))
+
+	WriteString(conn, resp.Array([]string{"ping"}))
+	_, err := conn.Read(responseBuf)
+	if err != nil {
+		fmt.Println("Error connecting to master 1/3")
+		return
+	}
+
+	port := strconv.Itoa(int(i.props.port))
+	replconfArgs := [][]string{
+		{"REPLCONF", "listening-port", port},
+		{"REPLCONF", "capa", "psync2"},
+	}
+	for _, argSet := range replconfArgs {
+		WriteString(conn, resp.Array(argSet))
+		_, err = conn.Read(responseBuf)
+		if err != nil {
+			fmt.Println("Error connecting to master 2/3")
+			return
+		}
+	}
+
 }
 
 func genReplId() string {

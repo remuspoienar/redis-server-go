@@ -13,13 +13,14 @@ import (
 )
 
 const (
-	PING = "PING"
-	PONG = "PONG"
-	DOCS = "COMMAND DOCS"
-	ECHO = "ECHO"
-	GET  = "GET"
-	SET  = "SET"
-	INFO = "INFO"
+	PING     = "PING"
+	PONG     = "PONG"
+	DOCS     = "COMMAND DOCS"
+	ECHO     = "ECHO"
+	GET      = "GET"
+	SET      = "SET"
+	INFO     = "INFO"
+	REPLCONF = "REPLCONF"
 )
 
 func infoCommand(parts []string) string {
@@ -76,6 +77,8 @@ func handleConnection(conn net.Conn, db storage.Db) {
 		case IsCommand(command, INFO):
 			value := infoCommand(commandParts)
 			WriteString(conn, resp.BulkString(value))
+		case IsCommand(command, REPLCONF):
+			WriteString(conn, resp.BulkString("OK"))
 		default:
 			WriteString(conn, resp.SimpleError("unknown command"))
 		}
