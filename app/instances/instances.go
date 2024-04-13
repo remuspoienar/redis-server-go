@@ -5,6 +5,8 @@ import (
 	"fmt"
 	. "github.com/codecrafters-io/redis-starter-go/app/internal"
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
+	"github.com/codecrafters-io/redis-starter-go/app/storage"
+	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -86,11 +88,12 @@ master_repl_offset:%d
 type Instance struct {
 	props    Properties
 	replicas []net.Conn
+	db       storage.Db
 }
 
 func New() Instance {
 	props := initProperties()
-	i := Instance{props: props, replicas: nil}
+	i := Instance{props: props, replicas: nil, db: storage.NewDb()}
 	if props.IsMaster() {
 		i.replicas = []net.Conn{}
 	}
@@ -101,7 +104,11 @@ func (i *Instance) Props() Properties {
 	return i.props
 }
 
-func (i *Instance) ConnectToMaster() {
+func (i *Instance) Db() storage.Db {
+	return i.db
+}
+
+func (i *Instance) ConnectToMaster() net.Conn {
 	conn, _ := net.Dial("tcp", i.props.masterAddress)
 	fmt.Printf("[%s] Attempting handshake ... local %s, remote %s\n", i.props.role, conn.LocalAddr(), conn.RemoteAddr())
 
@@ -110,8 +117,7 @@ func (i *Instance) ConnectToMaster() {
 	WriteString(conn, resp.Array("ping"))
 	_, err := conn.Read(responseBuf)
 	if err != nil {
-		fmt.Println("Error connecting to master 1/3")
-		return
+		log.Fatal("Error connecting to master 1/3")
 	}
 
 	port := strconv.Itoa(int(i.props.port))
@@ -123,19 +129,19 @@ func (i *Instance) ConnectToMaster() {
 		WriteString(conn, resp.Array(argSet...))
 		_, err = conn.Read(responseBuf)
 		if err != nil {
-			fmt.Println("Error connecting to master 2/3")
-			return
+			log.Fatal("Error connecting to master 2/3")
+
 		}
 	}
 
 	WriteString(conn, resp.Array("PSYNC", "?", "-1"))
 	_, err = conn.Read(responseBuf)
 	if err != nil {
-		fmt.Println("Error connecting to master 3/3")
-		return
+		log.Fatal("Error connecting to master 3/3")
 	}
 
 	fmt.Printf("[%s] Handshake with master instance successful\n", i.props.Role())
+	return conn
 }
 
 func (i *Instance) LinkReplica(replicaConn net.Conn) {
