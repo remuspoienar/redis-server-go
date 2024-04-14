@@ -34,6 +34,10 @@ func Array(input ...string) string {
 }
 
 func ParseCommand(input string) []string {
+	if strings.HasPrefix(input, "$") {
+		return []string{input}
+	}
+
 	lines := strings.Split(strings.Trim(input, "\r\n"), "\r\n")
 	argsNoStr := strings.Split(lines[0], "*")[1]
 	argsNo, _ := strconv.ParseInt(argsNoStr, 10, 32)

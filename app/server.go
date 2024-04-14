@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 )
 
 func infoCommand(parts []string, props instances.Properties) string {
@@ -31,6 +32,13 @@ func handleConnection(conn net.Conn, i *instances.Instance) {
 	db := (*i).Db()
 
 	for {
+
+		if !i.Ready() && !i.IsPeer(conn) {
+			fmt.Printf("[%s]Connection paused to finish a replica handshake\n", props.Role())
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
 		buf := make([]byte, 4096)
 
 		n, err := conn.Read(buf)
@@ -48,7 +56,7 @@ func handleConnection(conn net.Conn, i *instances.Instance) {
 		commandParts := resp.ParseCommand(data)
 		command := strings.Join(commandParts, " ")
 
-		fmt.Printf("parsed command: `%s`\n", command)
+		fmt.Printf("[%s] parsed command: `%s`\n", props.Role(), command)
 
 		switch {
 		case IsCommand(command, "PING"):
@@ -66,7 +74,7 @@ func handleConnection(conn net.Conn, i *instances.Instance) {
 			db.Set(commandParts[1], commandParts[2], px)
 
 			if props.IsMaster() {
-				go instance.PropagateCommand(buf[:n])
+				instance.PropagateCommand(buf[:n])
 			}
 			WriteString(conn, resp.SimpleString("OK"))
 		case IsCommand(command, "INFO"):
@@ -74,7 +82,14 @@ func handleConnection(conn net.Conn, i *instances.Instance) {
 			WriteString(conn, resp.BulkString(value))
 		case IsCommand(command, "REPLCONF"):
 			if props.IsMaster() {
-				WriteString(conn, resp.SimpleString("OK"))
+				if len(commandParts) >= 2 {
+					if IsCommand(commandParts[1], "capa") || IsCommand(commandParts[1], "listening-port") {
+						WriteString(conn, resp.SimpleString("OK"))
+					}
+					if IsCommand(commandParts[1], "ACK") {
+						fmt.Println("Replica ACK complete")
+					}
+				}
 			} else {
 				resp.InvalidReplicaCommand(conn)
 			}
@@ -86,17 +101,22 @@ func handleConnection(conn net.Conn, i *instances.Instance) {
 			value := fmt.Sprintf("FULLRESYNC %s %d", props.ReplId(), props.ReplOffset())
 			WriteString(conn, resp.SimpleString(value))
 			WriteString(conn, resp.EmptyRdb())
-			go instance.LinkReplica(conn)
+			instance.LinkReplica(conn)
+			go func() { i.ReadyCh() <- false }()
+			go func() {
+				time.Sleep(500 * time.Millisecond)
+				i.ReadyCh() <- true
+			}()
+		case IsCommand(command, "REPLCONF GETACK"):
+			WriteString(conn, resp.Array("REPLCONF", "ACK", "0"))
+			//instance.PropagateCommand([]byte(resp.Array("REPLCONF", "GETACK", "*")))
 		default:
 			WriteString(conn, resp.SimpleError("unknown command"))
 		}
 	}
 }
 
-var instance instances.Instance
-
-//var props instances.Properties
-//var db storage.Db
+var instance *instances.Instance
 
 func main() {
 	instance = instances.New()
@@ -110,9 +130,16 @@ func main() {
 		os.Exit(1)
 	}
 	defer CloseConnections(l)
+	defer close(instance.ReadyCh())
 
 	if props.IsMaster() {
 		fmt.Printf("[%s]Server is listening on %s\n", props.Role(), address)
+
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			instance.ReadyCh() <- true
+		}()
+
 	} else {
 		go instance.ConnectToMaster()
 		fmt.Printf("[%s]Server is listening on %s\nas a replica for master %s\n", props.Role(), address, props.MasterAddress())
@@ -125,6 +152,7 @@ func main() {
 			fmt.Println("Error accepting connection:", err.Error())
 			continue
 		}
-		go handleConnection(conn, &instance)
+		go handleConnection(conn, instance)
+
 	}
 }

@@ -2,7 +2,7 @@ package instances
 
 import (
 	"fmt"
-	"github.com/codecrafters-io/redis-starter-go/app/internal"
+	. "github.com/codecrafters-io/redis-starter-go/app/internal"
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
 	"io"
 	"net"
@@ -10,7 +10,7 @@ import (
 )
 
 func handleConnection(conn net.Conn, i *Instance) {
-	defer internal.CloseConnections(conn)
+	defer CloseConnections(conn)
 
 	db := (*i).Db()
 	for {
@@ -20,9 +20,10 @@ func handleConnection(conn net.Conn, i *Instance) {
 
 		if err != nil {
 			if err == io.EOF {
+				fmt.Println("[replication-handler] Connection closed by remote host")
 				return
 			}
-			fmt.Println("Error reading data", err.Error())
+			fmt.Println("[replication-handler] Error reading data", err.Error())
 			continue
 		}
 
@@ -31,16 +32,18 @@ func handleConnection(conn net.Conn, i *Instance) {
 		commandParts := resp.ParseCommand(data)
 		command := strings.Join(commandParts, " ")
 
-		fmt.Printf("parsed command: `%s`\n", command)
+		fmt.Printf("parsed replication command: `%s`\n", command)
+		fmt.Println("is ack cmd", IsCommand(command, "REPLCONF GETACK"))
 
 		switch {
-
-		case internal.IsCommand(command, "SET"):
-			px := internal.ParsePX(command)
+		case IsCommand(command, "SET"):
+			px := ParsePX(command)
 			db.Set(commandParts[1], commandParts[2], px)
-
+		case IsCommand(command, "REPLCONF GETACK"):
+			WriteString(conn, resp.Array("REPLCONF", "ACK", "0"))
 		default:
-			internal.WriteString(conn, resp.SimpleError("unknown command"))
+			WriteString(conn, resp.SimpleString("OK"))
+			//WriteString(conn, resp.SimpleError("unknown replication command"))
 		}
 	}
 
