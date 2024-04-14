@@ -5,6 +5,7 @@ import (
 	"fmt"
 	. "github.com/codecrafters-io/redis-starter-go/app/internal"
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
+	"github.com/codecrafters-io/redis-starter-go/app/storage"
 	"math/rand"
 	"net"
 	"os"
@@ -86,11 +87,12 @@ master_repl_offset:%d
 type Instance struct {
 	props    Properties
 	replicas []net.Conn
+	db       storage.Db
 }
 
 func New() Instance {
 	props := initProperties()
-	i := Instance{props: props, replicas: nil}
+	i := Instance{props: props, replicas: nil, db: storage.NewDb()}
 	if props.IsMaster() {
 		i.replicas = []net.Conn{}
 	}
@@ -99,6 +101,10 @@ func New() Instance {
 
 func (i *Instance) Props() Properties {
 	return i.props
+}
+
+func (i *Instance) Db() storage.Db {
+	return i.db
 }
 
 func (i *Instance) ConnectToMaster() {
@@ -136,6 +142,7 @@ func (i *Instance) ConnectToMaster() {
 	}
 
 	fmt.Printf("[%s] Handshake with master instance successful\n", i.props.Role())
+	handleConnection(conn, i)
 }
 
 func (i *Instance) LinkReplica(replicaConn net.Conn) {
@@ -146,9 +153,9 @@ func (i *Instance) LinkReplica(replicaConn net.Conn) {
 func (i *Instance) PropagateCommand(b []byte) {
 	for _, conn := range i.replicas {
 
-		//fmt.Println("Sending write command to replica", b, conn.RemoteAddr())
-		_, err := conn.Write(b)
-		//fmt.Println("Wrote n bytes", n)
+		fmt.Println("Sending write command to replica", b, conn.RemoteAddr())
+		n, err := conn.Write(b)
+		fmt.Println("Wrote n bytes", n)
 		if err != nil {
 			fmt.Println("err when sending command", err)
 		}

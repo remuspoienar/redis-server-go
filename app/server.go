@@ -5,14 +5,13 @@ import (
 	"github.com/codecrafters-io/redis-starter-go/app/instances"
 	. "github.com/codecrafters-io/redis-starter-go/app/internal"
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
-	"github.com/codecrafters-io/redis-starter-go/app/storage"
 	"io"
 	"net"
 	"os"
 	"strings"
 )
 
-func infoCommand(parts []string) string {
+func infoCommand(parts []string, props instances.Properties) string {
 	var subCommand string
 	if len(parts) < 2 {
 		subCommand = "replication"
@@ -25,8 +24,11 @@ func infoCommand(parts []string) string {
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, i *instances.Instance) {
 	defer CloseConnections(conn)
+
+	props := (*i).Props()
+	db := (*i).Db()
 
 	for {
 		buf := make([]byte, 4096)
@@ -64,11 +66,11 @@ func handleConnection(conn net.Conn) {
 			db.Set(commandParts[1], commandParts[2], px)
 
 			if props.IsMaster() {
-				WriteString(conn, resp.SimpleString("OK"))
-				instance.PropagateCommand(buf[:n])
+				go instance.PropagateCommand(buf[:n])
 			}
+			WriteString(conn, resp.SimpleString("OK"))
 		case IsCommand(command, "INFO"):
-			value := infoCommand(commandParts)
+			value := infoCommand(commandParts, props)
 			WriteString(conn, resp.BulkString(value))
 		case IsCommand(command, "REPLCONF"):
 			if props.IsMaster() {
@@ -84,7 +86,7 @@ func handleConnection(conn net.Conn) {
 			value := fmt.Sprintf("FULLRESYNC %s %d", props.ReplId(), props.ReplOffset())
 			WriteString(conn, resp.SimpleString(value))
 			WriteString(conn, resp.EmptyRdb())
-			instance.LinkReplica(conn)
+			go instance.LinkReplica(conn)
 		default:
 			WriteString(conn, resp.SimpleError("unknown command"))
 		}
@@ -92,13 +94,13 @@ func handleConnection(conn net.Conn) {
 }
 
 var instance instances.Instance
-var props instances.Properties
-var db storage.Db
+
+//var props instances.Properties
+//var db storage.Db
 
 func main() {
 	instance = instances.New()
-	props = instance.Props()
-	db = storage.NewDb()
+	props := instance.Props()
 
 	address := fmt.Sprintf("0.0.0.0:%d", props.Port())
 	l, err := net.Listen("tcp", address)
@@ -123,6 +125,6 @@ func main() {
 			fmt.Println("Error accepting connection:", err.Error())
 			continue
 		}
-		go handleConnection(conn)
+		go handleConnection(conn, &instance)
 	}
 }
