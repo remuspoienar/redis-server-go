@@ -6,7 +6,6 @@ import (
 	. "github.com/codecrafters-io/redis-starter-go/app/internal"
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
 	"github.com/codecrafters-io/redis-starter-go/app/storage"
-	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -108,7 +107,7 @@ func (i *Instance) Db() storage.Db {
 	return i.db
 }
 
-func (i *Instance) ConnectToMaster() net.Conn {
+func (i *Instance) ConnectToMaster() {
 	conn, _ := net.Dial("tcp", i.props.masterAddress)
 	fmt.Printf("[%s] Attempting handshake ... local %s, remote %s\n", i.props.role, conn.LocalAddr(), conn.RemoteAddr())
 
@@ -117,7 +116,8 @@ func (i *Instance) ConnectToMaster() net.Conn {
 	WriteString(conn, resp.Array("ping"))
 	_, err := conn.Read(responseBuf)
 	if err != nil {
-		log.Fatal("Error connecting to master 1/3")
+		fmt.Println("Error connecting to master 1/3")
+		return
 	}
 
 	port := strconv.Itoa(int(i.props.port))
@@ -129,19 +129,20 @@ func (i *Instance) ConnectToMaster() net.Conn {
 		WriteString(conn, resp.Array(argSet...))
 		_, err = conn.Read(responseBuf)
 		if err != nil {
-			log.Fatal("Error connecting to master 2/3")
-
+			fmt.Println("Error connecting to master 2/3")
+			return
 		}
 	}
 
 	WriteString(conn, resp.Array("PSYNC", "?", "-1"))
 	_, err = conn.Read(responseBuf)
 	if err != nil {
-		log.Fatal("Error connecting to master 3/3")
+		fmt.Println("Error connecting to master 3/3")
+		return
 	}
 
 	fmt.Printf("[%s] Handshake with master instance successful\n", i.props.Role())
-	return conn
+	go handleConnection(conn, i)
 }
 
 func (i *Instance) LinkReplica(replicaConn net.Conn) {
@@ -151,7 +152,10 @@ func (i *Instance) LinkReplica(replicaConn net.Conn) {
 
 func (i *Instance) PropagateCommand(b []byte) {
 	for _, conn := range i.replicas {
-		_, err := conn.Write(b)
+
+		fmt.Println("Sending write command to replica", b, conn.RemoteAddr())
+		n, err := conn.Write(b)
+		fmt.Println("Wrote n bytes", n)
 		if err != nil {
 			fmt.Println("err when sending command", err)
 		}
